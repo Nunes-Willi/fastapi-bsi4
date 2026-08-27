@@ -12,7 +12,7 @@ ARQUIVO_JSON = "produtos_aula14.json"
 class ProdutoInput(BaseModel):
     nome: str | None = None
     preco: float | None = None
-
+    marca: str | None = None
 
 class RespostaPaginada(BaseModel):
     page: int
@@ -21,7 +21,7 @@ class RespostaPaginada(BaseModel):
     results: list[dict]
 
 
-def validar_produto(nome, preco):
+def validar_produto(nome, preco, marca):
     erros = {}
 
     if nome is None:
@@ -43,6 +43,17 @@ def validar_produto(nome, preco):
         erros["preco"] = "O preço deve ser maior que zero."
     elif round(preco, 2) != preco:
         erros["preco"] = "O campo deve ter no máximo 2 casas decimais."
+        
+    if marca is None:
+        erros["marca"] = "Marca é obrigatório!"
+    elif not isinstance(marca, str):
+        erros["marca"] = "O campo deve ser uma string!"
+    else:
+        marca_limpa = marca.strip()
+        if marca_limpa == "":
+            erros["marca"] = "O campo não pode estar vazio!"
+        elif len(marca_limpa) < 2 or len(marca_limpa) > 150:
+            erros["marca"] = "O marca deve possuir entre 2 e 150 caracteres."
 
     return erros
 
@@ -84,6 +95,7 @@ def listar_produtos(
     ordering: str | None = None,
     page: str | None = None,
     page_size: str | None = None,
+    marca: str | None = None
 ):
     erros = {}
 
@@ -169,12 +181,13 @@ def buscar_produto_por_id(id: int):
 @app.post("/api/produtos/", status_code=201)
 def criar_produto(produto: ProdutoInput):
     nome_limpo = produto.nome.strip() if produto.nome is not None else None
-    erros = validar_produto(nome_limpo, produto.preco)
+    marca_limpa = produto.marca.strip() if produto.marca is not None else None
+    erros = validar_produto(nome_limpo, produto.preco, marca_limpa)
     if erros:
         raise HTTPException(status_code=400, detail=erros)
 
     novo_id = max([item["id"] for item in produtos], default=0) + 1
-    novo_produto = {"id": novo_id, "nome": nome_limpo, "preco": produto.preco}
+    novo_produto = {"id": novo_id, "nome": nome_limpo, "preco": produto.preco, "marca": marca_limpa}
     produtos.append(novo_produto)
     salvar_produtos(produtos)
     return novo_produto
@@ -185,10 +198,11 @@ def atualizar_produto(id: int, produto: ProdutoInput):
     for index, item in enumerate(produtos):
         if item["id"] == id:
             nome_limpo = produto.nome.strip() if produto.nome is not None else None
-            erros = validar_produto(nome_limpo, produto.preco)
+            marca_limpa = produto.marca.strip() if produto.marca is not None else None
+            erros = validar_produto(nome_limpo, produto.preco, marca_limpa)
             if erros:
                 raise HTTPException(status_code=400, detail=erros)
-            produtos[index] = {"id": id, "nome": nome_limpo, "preco": produto.preco}
+            produtos[index] = {"id": id, "nome": nome_limpo, "preco": produto.preco, "marca": marca_limpa}
             salvar_produtos(produtos)
             return produtos[index]
     raise HTTPException(status_code=404, detail="Produto não encontrado.")
