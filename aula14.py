@@ -128,7 +128,7 @@ def listar_produtos(
         except ValueError:
             erros["preco_maximo"] = "O valor deve ser numérico."
 
-    campos_ordenacao = ["nome", "preco"]
+    campos_ordenacao = ["nome", "preco", "marca"]
     campo_ordenacao = None
     ordem_desc = False
     if ordering is not None:
@@ -151,11 +151,23 @@ def listar_produtos(
     if search is not None:
         termo = search.lower()
         resultado = [p for p in resultado if termo in p["nome"].lower()]
+        
+    if marca is not None:
+        termo = marca.lower().strip()
+        resultado = [
+            p for p in resultado
+            if termo in p["marca"].lower()
+        ]
 
     if campo_ordenacao == "preco":
         resultado.sort(key=lambda p: p["preco"], reverse=ordem_desc)
     elif campo_ordenacao == "nome":
         resultado.sort(key=lambda p: p["nome"].lower(), reverse=ordem_desc)
+    elif campo_ordenacao == "marca":
+        resultado.sort(
+        key=lambda p: p["marca"].lower(),
+        reverse=ordem_desc
+    )
 
     total = len(resultado)
     total_pages = (total + tamanho_pagina - 1) // tamanho_pagina
