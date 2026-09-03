@@ -7,12 +7,14 @@ app = FastAPI()
 
 ARQUIVO_JSON = "produtos_aula14.json"
 
-# Aula 14 - Exercício 1 - Adicionar Marca no Produto
 
 class ProdutoInput(BaseModel):
     nome: str | None = None
     preco: float | None = None
     marca: str | None = None
+    estoque: int | None = None
+    descricao: str | None = None
+
 
 class RespostaPaginada(BaseModel):
     page: int
@@ -21,7 +23,7 @@ class RespostaPaginada(BaseModel):
     results: list[dict]
 
 
-def validar_produto(nome, preco, marca):
+def validar_produto(nome, preco, marca, estoque, descricao):
     erros = {}
 
     if nome is None:
@@ -43,7 +45,7 @@ def validar_produto(nome, preco, marca):
         erros["preco"] = "O preço deve ser maior que zero."
     elif round(preco, 2) != preco:
         erros["preco"] = "O campo deve ter no máximo 2 casas decimais."
-        
+
     if marca is None:
         erros["marca"] = "Marca é obrigatório!"
     elif not isinstance(marca, str):
@@ -52,8 +54,23 @@ def validar_produto(nome, preco, marca):
         marca_limpa = marca.strip()
         if marca_limpa == "":
             erros["marca"] = "O campo não pode estar vazio!"
-        elif len(marca_limpa) < 2 or len(marca_limpa) > 150:
-            erros["marca"] = "O marca deve possuir entre 2 e 150 caracteres."
+        elif len(marca_limpa) < 2 or len(marca_limpa) > 50:
+            erros["marca"] = "O marca deve possuir entre 2 e 50 caracteres."
+
+    if estoque is None:
+        erros["estoque"] = "O campo é obrigatório."
+    elif isinstance(estoque, bool):
+        erros["estoque"] = "O campo deve ser um número inteiro."
+    elif not isinstance(estoque, int):
+        erros["estoque"] = "O campo deve ser um número inteiro."
+    elif estoque < 0:
+        erros["estoque"] = "O estoque não pode ser negativo."
+
+    if descricao is not None:
+        if not isinstance(descricao, str):
+            erros["descricao"] = "O campo deve ser uma string."
+        elif len(descricao.strip()) > 500:
+            erros["descricao"] = "A descrição deve possuir no máximo 500 caracteres."
 
     return erros
 
@@ -95,7 +112,9 @@ def listar_produtos(
     ordering: str | None = None,
     page: str | None = None,
     page_size: str | None = None,
-    marca: str | None = None
+    marca: str | None = None,
+    estoque_minimo: str | None = None,
+    estoque_maximo: str | None = None
 ):
     erros = {}
 
@@ -128,9 +147,29 @@ def listar_produtos(
         except ValueError:
             erros["preco_maximo"] = "O valor deve ser numérico."
 
-    campos_ordenacao = ["nome", "preco", "marca"]
+    if estoque_minimo is not None:
+        try:
+            estoque_minimo = int(estoque_minimo)
+        except ValueError:
+            erros["estoque_minimo"] = "O valor deve ser numérico."
+
+    if estoque_maximo is not None:
+        try:
+            estoque_maximo = int(estoque_maximo)
+        except ValueError:
+            erros["estoque_maximo"] = "O valor deve ser numérico."
+
+    campos_ordenacao = [
+        "nome",
+        "preco",
+        "marca",
+        "estoque",
+        "descricao"
+    ]
+
     campo_ordenacao = None
     ordem_desc = False
+
     if ordering is not None:
         if ordering.lstrip("-") in campos_ordenacao:
             campo_ordenacao = ordering.lstrip("-")
@@ -144,30 +183,74 @@ def listar_produtos(
     resultado = produtos
 
     if preco_minimo is not None:
-        resultado = [p for p in resultado if p["preco"] >= preco_minimo]
+        resultado = [
+            p for p in resultado
+            if p["preco"] >= preco_minimo
+        ]
+
     if preco_maximo is not None:
-        resultado = [p for p in resultado if p["preco"] <= preco_maximo]
+        resultado = [
+            p for p in resultado
+            if p["preco"] <= preco_maximo
+        ]
+
+    if estoque_minimo is not None:
+        resultado = [
+            p for p in resultado
+            if p["estoque"] >= estoque_minimo
+        ]
+
+    if estoque_maximo is not None:
+        resultado = [
+            p for p in resultado
+            if p["estoque"] <= estoque_maximo
+        ]
 
     if search is not None:
         termo = search.lower()
-        resultado = [p for p in resultado if termo in p["nome"].lower()]
-        
+        resultado = [
+            p for p in resultado
+            if termo in p["nome"].lower()
+            or termo in p["marca"].lower()
+            or termo in (p.get("descricao") or "").lower()
+        ]
+
     if marca is not None:
         termo = marca.lower().strip()
         resultado = [
             p for p in resultado
-            if termo in p["marca"].lower()
+            if p["marca"].strip().lower() == termo
         ]
 
     if campo_ordenacao == "preco":
-        resultado.sort(key=lambda p: p["preco"], reverse=ordem_desc)
+        resultado.sort(
+            key=lambda p: p["preco"],
+            reverse=ordem_desc
+        )
+
     elif campo_ordenacao == "nome":
-        resultado.sort(key=lambda p: p["nome"].lower(), reverse=ordem_desc)
+        resultado.sort(
+            key=lambda p: p["nome"].lower(),
+            reverse=ordem_desc
+        )
+
     elif campo_ordenacao == "marca":
         resultado.sort(
-        key=lambda p: p["marca"].lower(),
-        reverse=ordem_desc
-    )
+            key=lambda p: p["marca"].lower(),
+            reverse=ordem_desc
+        )
+
+    elif campo_ordenacao == "estoque":
+        resultado.sort(
+            key=lambda p: p["estoque"],
+            reverse=ordem_desc
+        )
+
+    elif campo_ordenacao == "descricao":
+        resultado.sort(
+            key=lambda p: (p.get("descricao") or "").lower(),
+            reverse=ordem_desc
+        )
 
     total = len(resultado)
     total_pages = (total + tamanho_pagina - 1) // tamanho_pagina
@@ -187,21 +270,64 @@ def buscar_produto_por_id(id: int):
     for produto in produtos:
         if produto["id"] == id:
             return produto
-    raise HTTPException(status_code=404, detail="Produto não encontrado.")
+
+    raise HTTPException(
+        status_code=404,
+        detail="Produto não encontrado."
+    )
 
 
 @app.post("/api/produtos/", status_code=201)
 def criar_produto(produto: ProdutoInput):
-    nome_limpo = produto.nome.strip() if produto.nome is not None else None
-    marca_limpa = produto.marca.strip() if produto.marca is not None else None
-    erros = validar_produto(nome_limpo, produto.preco, marca_limpa)
-    if erros:
-        raise HTTPException(status_code=400, detail=erros)
+    nome_limpo = (
+        produto.nome.strip()
+        if produto.nome is not None
+        else None
+    )
 
-    novo_id = max([item["id"] for item in produtos], default=0) + 1
-    novo_produto = {"id": novo_id, "nome": nome_limpo, "preco": produto.preco, "marca": marca_limpa}
+    marca_limpa = (
+        produto.marca.strip()
+        if produto.marca is not None
+        else None
+    )
+
+    descricao_limpa = (
+        produto.descricao.strip()
+        if produto.descricao is not None
+        else None
+    )
+
+    erros = validar_produto(
+        nome_limpo,
+        produto.preco,
+        marca_limpa,
+        produto.estoque,
+        descricao_limpa
+    )
+
+    if erros:
+        raise HTTPException(
+            status_code=400,
+            detail=erros
+        )
+
+    novo_id = max(
+        [item["id"] for item in produtos],
+        default=0
+    ) + 1
+
+    novo_produto = {
+        "id": novo_id,
+        "nome": nome_limpo,
+        "preco": produto.preco,
+        "marca": marca_limpa,
+        "estoque": produto.estoque,
+        "descricao": descricao_limpa
+    }
+
     produtos.append(novo_produto)
     salvar_produtos(produtos)
+
     return novo_produto
 
 
@@ -209,15 +335,55 @@ def criar_produto(produto: ProdutoInput):
 def atualizar_produto(id: int, produto: ProdutoInput):
     for index, item in enumerate(produtos):
         if item["id"] == id:
-            nome_limpo = produto.nome.strip() if produto.nome is not None else None
-            marca_limpa = produto.marca.strip() if produto.marca is not None else None
-            erros = validar_produto(nome_limpo, produto.preco, marca_limpa)
+            nome_limpo = (
+                produto.nome.strip()
+                if produto.nome is not None
+                else None
+            )
+
+            marca_limpa = (
+                produto.marca.strip()
+                if produto.marca is not None
+                else None
+            )
+
+            descricao_limpa = (
+                produto.descricao.strip()
+                if produto.descricao is not None
+                else None
+            )
+
+            erros = validar_produto(
+                nome_limpo,
+                produto.preco,
+                marca_limpa,
+                produto.estoque,
+                descricao_limpa
+            )
+
             if erros:
-                raise HTTPException(status_code=400, detail=erros)
-            produtos[index] = {"id": id, "nome": nome_limpo, "preco": produto.preco, "marca": marca_limpa}
+                raise HTTPException(
+                    status_code=400,
+                    detail=erros
+                )
+
+            produtos[index] = {
+                "id": id,
+                "nome": nome_limpo,
+                "preco": produto.preco,
+                "marca": marca_limpa,
+                "estoque": produto.estoque,
+                "descricao": descricao_limpa
+            }
+
             salvar_produtos(produtos)
+
             return produtos[index]
-    raise HTTPException(status_code=404, detail="Produto não encontrado.")
+
+    raise HTTPException(
+        status_code=404,
+        detail="Produto não encontrado."
+    )
 
 
 @app.delete("/api/produtos/{id}/", status_code=204)
@@ -227,9 +393,8 @@ def remover_produto(id: int):
             produtos.pop(index)
             salvar_produtos(produtos)
             return
-    raise HTTPException(status_code=404, detail="Produto não encontrado.")
 
-
-# Rodar servidor:
-# uvicorn aula14:app --reload
-# Acesse a documentação em http://localhost:8000/docs
+    raise HTTPException(
+        status_code=404,
+        detail="Produto não encontrado."
+    )
